@@ -2,9 +2,9 @@
 <div class="form-group">
     {{ field.label(class="label") }}
     {% if field.errors %}
-        {% set css_class = ' is-invalid ' + kwargs.pop('class', '') %}
+        {% set css_class = 'has_error ' + kwargs.pop('class', '') %}
         {{ field(class=css_class, **kwargs) }}
-        <div class="invalid-feedback">{% for error in field.errors %}{{ error|e }}. {% endfor %}</div>
+        <ul class="errors">{% for error in field.errors %}<li>{{ error|e }}</li>{% endfor %}</ul>
     {% else %}
         {{ field(**kwargs) }}
     {% endif %}
@@ -15,20 +15,13 @@
 <div class="form-group">
     <div class="custom-control custom-checkbox">
         {% if field.errors %}
-            {% set css_class = ' is-invalid ' + kwargs.pop('class', '') %}
+            {% set css_class = 'has_error ' + kwargs.pop('class', '') %}
             {{ field(class=css_class, **kwargs) }}
-            <div class="invalid-feedback">{% for error in field.errors %}{{ error|e }}. {% endfor %}</div>
+            <ul class="errors">{% for error in field.errors %}<li>{{ error|e }}</li>{% endfor %}</ul>
         {% else %}
             {{ field(**kwargs) }}
         {% endif %}
         {{ field.label(class="custom-control-label") }}
     </div>
-</div>
-{% endmacro %}
-
-{% macro render_select(field) %}
-<div class="form-group">
-        {{ field.label(class="label") }}
-        {{ field(class="custom-select", **kwargs) }}
 </div>
 {% endmacro %}
