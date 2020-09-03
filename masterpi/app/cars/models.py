@@ -1,6 +1,5 @@
 from app import db
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
 
 class Car(db.Model):
     __tablename__ = 'Car'
@@ -10,30 +9,14 @@ class Car(db.Model):
     body_type = db.Column(db.String(100))
     seats = db.Column(db.Integer)
     cost_per_hour = db.Column(db.Integer, nullable=False)
-    available = db.Column(db.Boolean, nullable=False)
-    reports = relationship("CarReport")
-    bookings = relationship("Booking")
 
     def __init__(self, make=None, color=None, body_type=None, 
-                 seats=None, cost_per_hour=0, available=True):
+                 seats=None, cost_per_hour=0):
         self.make = make
         self.color = color
         self.body_type = body_type
         self.seats = seats
         self.cost_per_hour = cost_per_hour
-        self.available = available
-
-    @property
-    def available(self):
-        return not (self.booked or self.fixing)
-
-    @property
-    def booked(self):
-        return self.bookings and self.bookings[-1].booked
-
-    @property
-    def fixing(self):
-        return self.reports and not self.reports[-1].fixed
 
     def __repr__(self):
         return '<Car %r>' % (self.id)
@@ -61,10 +44,8 @@ class CarReport(db.Model):
     creation_time = db.Column(db.DateTime(timezone=True), server_default=func.now())
     update_time = db.Column(db.DateTime(timezone=True), onupdate=func.now())
 
-    def __init__(self, car_id):
+    def __init__(self, car_id, fixer_id):
         self.car_id = car_id
-
-    def setFixer(self, fixer_id):
         self.fixer_id = fixer_id
 
     def setFixed(self, fixed=True):
