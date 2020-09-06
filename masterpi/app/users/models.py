@@ -12,7 +12,6 @@ class User(UserMixin, db.Model):
     role = db.Column(db.SmallInteger, default=USER.CUSTOMER)
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
-    facial_recognition = db.Column(db.Boolean, default=False)
     google_login = db.Column(db.Boolean, default=False)
 
     def __init__(self, username, email, password,
@@ -32,14 +31,14 @@ class User(UserMixin, db.Model):
         self.last_name = last_name
         self.google_login = True
 
+    def getUsername(self):
+        return self.username
+
     def isAdmin(self):
         return self.role == 0
 
     def isManager(self):
         return self.role == 1
-
-    def isEngineer(self):
-        return self.role == 2 
 
     def isCustomer(self):
         return self.role == 3

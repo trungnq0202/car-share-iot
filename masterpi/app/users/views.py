@@ -1,7 +1,12 @@
-import os, pickle, requests, json
+import requests, json
+import os
+import pickle
+import json
 import numpy as np
-from multiprocessing import Process
+import qrcode
+
 from json import JSONEncoder
+from multiprocessing import Process
 from flask import Blueprint, request, render_template, flash, g, session, redirect, url_for, current_app
 from werkzeug.security import check_password_hash, generate_password_hash
 from sqlalchemy import or_
@@ -13,17 +18,19 @@ from flask_login import (
     logout_user,
 )
 
+from ..facial_recognition.encode_faces import encode
 from app import db, login_manager, client
 from app.users.forms import RegisterForm, LoginForm, UserForm, UserEditForm, PhotosForm
-# from ..facial_recognition.encode_faces import encode
 from app.users.models import User
 from app.cars.models import Car, CarReport
 from app.cars.forms import CarForm
 from app.bookings.models import Booking
+# from app.users.decorators import login_required
 
 mod = Blueprint('users', __name__, url_prefix='/users')
 api_mod = Blueprint('users_api', __name__, url_prefix='/api/users')
-UPLOAD_FOLDER_URL = 'app/facial_recognition/dataset'
+FACE_UPLOAD_FOLDER_URL = 'app/facial_recognition/dataset'
+QR_UPLOAD_FOLDER_URL = 'app/qr_code'
 
 class NumpyArrayEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -36,31 +43,22 @@ class NumpyArrayEncoder(json.JSONEncoder):
         else:
             return super(NumpyArrayEncoder, self).default(obj)
 
-@mod.route('/login/redirect')
-@login_required
-def login_redirect():
-    if current_user.isEngineer():
-        return redirect(url_for('users.engineer'))
-    if current_user.isManager() or current_user.isAdmin():
-        return redirect(url_for('users.dashboard'))
-    return redirect(url_for('users.home'))
+def generate_qr_code(old_engineer_name, new_engineer_name):
+    if old_engineer_name != '':
+        oldfilename = old_engineer_name + '.png'
+        dir =  os.path.join(QR_UPLOAD_FOLDER_URL, oldfilename)
+        if os.path.exists(dir):
+            os.remove(dir)
+    
+    newfilename = new_engineer_name + '.png'
+    directory = os.path.join(QR_UPLOAD_FOLDER_URL, newfilename)
+    img = qrcode.make(new_engineer_name)
+    img.save(directory)
 
-@mod.route('/')
+@mod.route('/me/')
 @login_required
 def home():
-    bookings = Booking.query.filter_by(user_id=current_user.id).all()
-    return render_template("users/home.html", user=current_user, bookings=bookings)
-    
-@mod.route('/dashboard/')
-@login_required
-def dashboard():
-    return render_template("users/dashboard.html")
-    
-@mod.route('/engineer/')
-@login_required
-def engineer():
-    return render_template("users/engineer.html")
-    
+    return render_template("users/profile.html", user=current_user)
 
 @mod.route('/logout/')
 @login_required
@@ -95,7 +93,8 @@ def login():
             # the session can't be modified as it's signed, 
             # it's a safe place to store the user id
             login_user(user)
-            return redirect(url_for('users.login_redirect'))
+            flash('Welcome %s' % user.username)
+            return redirect(url_for('users.home'))
         flash('Wrong username or password', 'error-message')
     return render_template("users/login.html", form=form)
 
@@ -147,7 +146,7 @@ def google_callback():
         db.session.add(user)
         db.session.commit()
     login_user(user)
-    return redirect(url_for('users.login_redirect'))
+    return redirect(url_for('users.home'))
 
 @mod.route('/register/', methods=['GET', 'POST'])
 def register():
@@ -173,8 +172,11 @@ def register():
 
             # Log the user in, as he now has an id
             login_user(user)
+
+            # flash will display a message to the user
+            flash('Thanks for registering')
             # redirect user to the 'home' method of the user module.
-            return redirect(url_for('users.login_redirect'))
+            return redirect(url_for('users.home'))
         flash('Email address or username is taken.')
     return render_template("users/register.html", form=form)
     
@@ -276,10 +278,15 @@ def admin_users_create():
         # Insert the record in our database and commit it
         db.session.add(user)
         db.session.commit()
+
+        #Generate QR code
+        if form.role.data == '2':
+            generate_qr_code('', form.username.data)
+
         flash('User added.')
         return redirect(url_for('users.admin_users_create'))
         # redirect user to the 'home' method of the user module.    
-    return render_template("users/admin/users-create.html", form=form)    
+    return render_template("users/admin/users-create.html", form=form)   
 
 @mod.route('/admin/users/edit/<user_id>', methods=['GET', 'POST'])
 @login_required
@@ -293,6 +300,11 @@ def admin_users_edit(user_id):
     if form.validate_on_submit():
         form.populate_obj(user)
         db.session.commit()
+
+        #generate new QR code
+        if form.role.data == '2':
+            generate_qr_code(user.getUsername(), form.username.data)
+
         flash('User information updated.')
     return render_template("users/admin/users-edit.html", form=form)
 
@@ -303,6 +315,12 @@ def admin_users_delete():
         return "503 Not sufficent permission", 503
     user = User.query.filter_by(id=request.form['user_id']).first()
     if user:
+        #delete qr_code
+        if user.getRole() == 'engineer':
+            filename = user.getUsername() + '.png'
+            directory = os.path.join(QR_UPLOAD_FOLDER_URL, filename)
+            if os.path.exists(directory):
+                os.remove(directory)
         db.session.delete(user)
         db.session.commit()
         return '', 200
@@ -336,7 +354,7 @@ def photos_upload():
         if form.validate_on_submit():
             user = User.query.filter_by(id=session['user_id']).first()
             username = user.username
-            directory = os.path.join(UPLOAD_FOLDER_URL, username)
+            directory = os.path.join(FACE_UPLOAD_FOLDER_URL, username)
             if not os.path.exists(directory):
                 os.makedirs(directory)
             for f in request.files.getlist('images'):
