@@ -1,7 +1,11 @@
-import requests, json
+import os, pickle, requests, json
+import numpy as np
+from multiprocessing import Process
+from json import JSONEncoder
 from flask import Blueprint, request, render_template, flash, g, session, redirect, url_for, current_app
 from werkzeug.security import check_password_hash, generate_password_hash
 from sqlalchemy import or_
+from werkzeug.utils import secure_filename
 from flask_login import (
     current_user,
     login_required,
@@ -10,41 +14,32 @@ from flask_login import (
 )
 
 from app import db, login_manager, client
-from app.users.forms import RegisterForm, LoginForm, UserForm, UserEditForm
+from app.users.forms import RegisterForm, LoginForm, UserForm, UserEditForm, PhotosForm
+# from ..facial_recognition.encode_faces import encode
 from app.users.models import User
 from app.cars.models import Car, CarReport
 from app.cars.forms import CarForm
 from app.bookings.models import Booking
-# from app.users.decorators import login_required
 
 mod = Blueprint('users', __name__, url_prefix='/users')
 api_mod = Blueprint('users_api', __name__, url_prefix='/api/users')
+UPLOAD_FOLDER_URL = 'app/facial_recognition/dataset'
 
-@mod.route('/login/redirect')
-@login_required
-def login_redirect():
-    if current_user.isEngineer():
-        return redirect(url_for('users.engineer'))
-    if current_user.isManager() or current_user.isAdmin():
-        return redirect(url_for('users.dashboard'))
-    return redirect(url_for('users.home'))
+class NumpyArrayEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NumpyArrayEncoder, self).default(obj)
 
-@mod.route('/')
+@mod.route('/me/')
 @login_required
 def home():
-    bookings = Booking.query.filter_by(user_id=current_user.id).all()
-    return render_template("users/home.html", user=current_user, bookings=bookings)
-    
-@mod.route('/dashboard/')
-@login_required
-def dashboard():
-    return render_template("users/dashboard.html")
-    
-@mod.route('/engineer/')
-@login_required
-def engineer():
-    return render_template("users/engineer.html")
-    
+    return render_template("users/profile.html", user=current_user)
 
 @mod.route('/logout/')
 @login_required
@@ -79,7 +74,8 @@ def login():
             # the session can't be modified as it's signed, 
             # it's a safe place to store the user id
             login_user(user)
-            return redirect(url_for('users.login_redirect'))
+            flash('Welcome %s' % user.username)
+            return redirect(url_for('users.home'))
         flash('Wrong username or password', 'error-message')
     return render_template("users/login.html", form=form)
 
@@ -131,7 +127,7 @@ def google_callback():
         db.session.add(user)
         db.session.commit()
     login_user(user)
-    return redirect(url_for('users.login_redirect'))
+    return redirect(url_for('users.home'))
 
 @mod.route('/register/', methods=['GET', 'POST'])
 def register():
@@ -157,8 +153,11 @@ def register():
 
             # Log the user in, as he now has an id
             login_user(user)
+
+            # flash will display a message to the user
+            flash('Thanks for registering')
             # redirect user to the 'home' method of the user module.
-            return redirect(url_for('users.login_redirect'))
+            return redirect(url_for('users.home'))
         flash('Email address or username is taken.')
     return render_template("users/register.html", form=form)
     
@@ -302,3 +301,31 @@ def api_login():
 
 def api_logout():
     pass
+
+@api_mod.route('/face_encodings/', methods=['GET'])
+def face_encodings():
+    encodings = pickle.loads(open('app/facial_recognition/output/encodings.pickle', 'rb').read())
+    encodings_json = json.dumps(encodings, cls=NumpyArrayEncoder)
+    return encodings_json
+
+@mod.route('/photos-upload/', methods=['GET', 'POST'])
+@login_required
+def photos_upload():
+    """
+    Upload photos
+    """
+    form = PhotosForm()
+    if request.method == 'POST':
+        if form.validate_on_submit():
+            user = User.query.filter_by(id=session['user_id']).first()
+            username = user.username
+            directory = os.path.join(UPLOAD_FOLDER_URL, username)
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            for f in request.files.getlist('images'):
+                filename = secure_filename(f.filename)
+                f.save(os.path.join(directory, filename))
+            thread = Process(target=encode)
+            thread.run()
+            return render_template("users/photos-upload.html", form=form, uploaded=True)
+    return render_template("users/photos-upload.html", form=form, uploaded=False)
