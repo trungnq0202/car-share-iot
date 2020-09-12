@@ -21,8 +21,8 @@ from app.cars.models import Car, CarReport
 from app.cars.forms import CarForm
 from app.bookings.models import Booking
 
-mod = Blueprint('users', __name__, url_prefix='/')
-api_mod = Blueprint('users_api', __name__, url_prefix='/api')
+mod = Blueprint('users', __name__, url_prefix='/users')
+api_mod = Blueprint('users_api', __name__, url_prefix='/api/users')
 UPLOAD_FOLDER_URL = 'app/facial_recognition/dataset'
 
 class NumpyArrayEncoder(json.JSONEncoder):
@@ -36,14 +36,14 @@ class NumpyArrayEncoder(json.JSONEncoder):
         else:
             return super(NumpyArrayEncoder, self).default(obj)
 
-    
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(user_id)
-
-@login_manager.unauthorized_handler
-def unauthorized():
-    return redirect(url_for('users.login'))
+@mod.route('/login/redirect')
+@login_required
+def login_redirect():
+    if current_user.isEngineer():
+        return redirect(url_for('users.engineer'))
+    if current_user.isManager() or current_user.isAdmin():
+        return redirect(url_for('users.dashboard'))
+    return redirect(url_for('users.home'))
 
 @mod.route('/')
 @login_required
@@ -51,6 +51,27 @@ def home():
     bookings = Booking.query.filter_by(user_id=current_user.id) \
                             .order_by(Booking.id.desc()).all()
     return render_template("users/home.html", user=current_user, bookings=bookings)
+    
+@mod.route('/dashboard/')
+@login_required
+def dashboard():
+    return render_template("users/dashboard.html")
+    
+@mod.route('/engineer/')
+@login_required
+def engineer():
+    return render_template("users/engineer.html")
+    
+
+@mod.route('/logout/')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('users.login'))
+    
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(user_id)
 
 @mod.route('/login/', methods=['GET', 'POST'])
 def login():
@@ -62,14 +83,14 @@ def login():
     form = LoginForm(request.form)
     # make sure data are valid, but doesn't validate password is right
     if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data).first()
+        user = User.query.filter_by(username=form.username.data).first()
         # we use werzeug to validate user's password
         if user and check_password_hash(user.password, form.password.data):
             # the session can't be modified as it's signed, 
             # it's a safe place to store the user id
             login_user(user)
             return redirect(url_for('users.login_redirect'))
-        flash('Wrong email or password', 'error-message')
+        flash('Wrong username or password', 'error-message')
     return render_template("users/login.html", form=form)
 
 @mod.route('/google-login/', methods=['GET'])
@@ -115,8 +136,8 @@ def google_callback():
     userinfo_response = requests.get(uri, headers=headers, data=body).json()
     user = User.query.filter_by(email=userinfo_response['email']).first()
     if not user:
-        user = User(userinfo_response['sub'],
-                    userinfo_response['email'], 
+        user = User(userinfo_response['email'],
+                    username=userinfo_response['sub'], 
                     first_name=userinfo_response['given_name'],
                     last_name=userinfo_response['family_name'])
         db.session.add(user)
@@ -124,21 +145,6 @@ def google_callback():
     login_user(user)
     return redirect(url_for('users.login_redirect'))
 
-@mod.route('/login/redirect')
-@login_required
-def login_redirect():
-    if current_user.isEngineer():
-        return redirect(url_for('users.engineer'))
-    if current_user.isManager() or current_user.isAdmin():
-        return redirect(url_for('users.dashboard'))
-    return redirect(url_for('users.home'))
- 
-@mod.route('/logout/')
-@login_required
-def logout():
-    logout_user()
-    return redirect(url_for('users.login'))
-  
 @mod.route('/register/', methods=['GET', 'POST'])
 def register():
     """
@@ -148,14 +154,17 @@ def register():
         return redirect(url_for('users.login_redirect'))    
     form = RegisterForm(request.form)
     if form.validate_on_submit():
-        # check whether if there is user with the same email
-        user = User.query.filter(User.email == form.email.data).first()
+        # check whether if there is user with the same username/email
+        user = User.query.filter(
+            or_(
+                User.username == form.username.data,
+                User.email == form.email.data
+            )
+        ).first()
         if not user:
             # create an user instance not yet stored in the database
-            user = User(form.email.data,
-                        password=generate_password_hash(form.password.data),
-                        first_name=form.first_name.data,
-                        last_name=form.last_name.data)
+            user = User(username=form.username.data, email=form.email.data, \
+                        password=generate_password_hash(form.password.data))
             # Insert the record in our database and commit it
             db.session.add(user)
             db.session.commit()
@@ -164,19 +173,15 @@ def register():
             login_user(user)
             # redirect user to the 'home' method of the user module.
             return redirect(url_for('users.login_redirect'))
-        flash('Email address is taken.')
+        flash('Email address or username is taken.')
     return render_template("users/register.html", form=form)
-
-@mod.route('/dashboard/')
-@login_required
-def dashboard():
-    return render_template("users/dashboard.html")
     
-@mod.route('/engineer/')
+@mod.route('/booking-history/', methods=['GET'])
 @login_required
-def engineer():
-    return render_template("users/engineer.html")
-  
+def booking_history():
+    bookings = Booking.query.filter_by(user_id=session['user_id']).all()
+    return render_template("users/booking-history.html", bookings=bookings)
+
 @mod.route('/admin/bookings', methods=['GET'])
 @login_required
 def admin_bookings():
@@ -184,6 +189,7 @@ def admin_bookings():
         return "503 Not sufficent permission"
     bookings = Booking.query.all()
     return render_template("users/admin/bookings.html", bookings=bookings)
+
 
 @mod.route('/admin/cars', methods=['GET'])
 @login_required
@@ -268,8 +274,8 @@ def admin_users_create():
         return "503 Not sufficent permission"
     form = UserForm(request.form)
     if form.validate_on_submit():
-        user = User(password=generate_password_hash(form.password.data),
-                    email=form.email.data,
+        user = User(form.email.data,
+                    password=generate_password_hash(form.password.data),
                     first_name=form.first_name.data,
                     last_name=form.last_name.data,
                     role=form.role.data)
@@ -310,11 +316,14 @@ def admin_users_delete():
 
 @api_mod.route('/login/', methods=['POST'])
 def api_login():
-    user = User.query.filter_by(email=request.form['email']).first()
+    user = User.query.filter_by(username=request.form['username']).first()
     if user and check_password_hash(user.password, request.form['password']):
         return user.serialize(), 200
     else:
         return '{}', 401
+
+def api_logout():
+    pass
 
 @api_mod.route('/face_encodings/', methods=['GET'])
 def face_encodings():
@@ -332,8 +341,8 @@ def photos_upload():
     if request.method == 'POST':
         if form.validate_on_submit():
             user = User.query.filter_by(id=session['user_id']).first()
-            id = user.id
-            directory = os.path.join(UPLOAD_FOLDER_URL, id)
+            username = user.username
+            directory = os.path.join(UPLOAD_FOLDER_URL, username)
             if not os.path.exists(directory):
                 os.makedirs(directory)
             for f in request.files.getlist('images'):
