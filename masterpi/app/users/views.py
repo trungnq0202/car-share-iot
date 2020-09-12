@@ -136,10 +136,10 @@ def google_callback():
     userinfo_response = requests.get(uri, headers=headers, data=body).json()
     user = User.query.filter_by(email=userinfo_response['email']).first()
     if not user:
-        user = User.google_init(userinfo_response['sub'],
-                                userinfo_response['email'], 
-                                first_name=userinfo_response['given_name'],
-                                last_name=userinfo_response['family_name'])
+        user = User(userinfo_response['email'],
+                    username=userinfo_response['sub'], 
+                    first_name=userinfo_response['given_name'],
+                    last_name=userinfo_response['family_name'])
         db.session.add(user)
         db.session.commit()
     login_user(user)
@@ -155,15 +155,14 @@ def register():
     form = RegisterForm(request.form)
     if form.validate_on_submit():
         # check whether if there is user with the same username/email
-        user = User.query.filter(
-            or_(
-                User.username == form.username.data,
-                User.email == form.email.data
-            )
-        ).first()
+        user = User.query.filter(or_(User.username == form.username.data, 
+                                     User.email == form.email.data)).first()
         if not user:
             # create an user instance not yet stored in the database
-            user = User(username=form.username.data, email=form.email.data, \
+            user = User(form.email.data, 
+                        username=form.username.data, 
+                        first_name=form.first_name.data, 
+                        last_name=form.last_name.data, 
                         password=generate_password_hash(form.password.data))
             # Insert the record in our database and commit it
             db.session.add(user)
@@ -274,12 +273,11 @@ def admin_users_create():
         return "503 Not sufficent permission"
     form = UserForm(request.form)
     if form.validate_on_submit():
-        user = User(username=form.username.data, 
-                  password=generate_password_hash(form.password.data),
-                  email=form.email.data,
-                  first_name=form.first_name.data,
-                  last_name=form.last_name.data,
-                  role=form.role.data)
+        user = User(form.email.data,
+                    password=generate_password_hash(form.password.data),
+                    first_name=form.first_name.data,
+                    last_name=form.last_name.data,
+                    role=form.role.data)
         # Insert the record in our database and commit it
         db.session.add(user)
         db.session.commit()
