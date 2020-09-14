@@ -12,18 +12,19 @@ class User(UserMixin, db.Model):
     role = db.Column(db.SmallInteger, default=USER.CUSTOMER)
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
-    bluetooth_MAC = db.Column(db.String(100))
+    bluetooth_MAC = db.Column(db.String(100), unique=True, nullable=True)
     facial_recognition = db.Column(db.Boolean, default=False)
     google_login = db.Column(db.Boolean, default=False)
 
     def __init__(self, email, username=None, password=None,
-                       role=None, first_name=None, last_name=None):
+                       role=None, first_name=None, last_name=None, bluetooth_MAC=None):
         self.email = email
         self.username = username
         self.password = password
         self.role = role
         self.first_name = first_name
         self.last_name = last_name
+        self.bluetooth_MAC = bluetooth_MAC
 
     def isAdmin(self):
         return self.role == 0
@@ -32,7 +33,7 @@ class User(UserMixin, db.Model):
         return self.role == 1
 
     def isEngineer(self):
-        return self.role == 2 
+        return self.role == 2
 
     def isCustomer(self):
         return self.role == 3
