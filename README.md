@@ -16,10 +16,10 @@ Overall, the project have two main parts: `masterpi` and `agentpi`. The `materpi
 
 ### Clone
 
-- Clone this repo to your local machine using `https://github.com/thanhlongb/car-share-iot`
+- Clone this repo to your local machine using `https://github.com/trungnq0202/car-share-iot.git`
 
 ```shell
-$ git clone https://github.com/thanhlongb/car-share-iot
+$ git clone https://github.com/trungnq0202/car-share-iot.git
 ```
 
 ### Setup
@@ -113,13 +113,7 @@ We have create 4 accounts present 4 types of users in the application:
     - password: `manager`
 - customer
     - username: `customer`
-    - password: `customer`  
-### Git
-The project is developed with the support of Git for code management.   
-
-![git_commit_summarize](img/git-commit.png)   
-
-![git_branches](img/git-branches.png)
+    - password: `customer`
 
 ### Trello  
 In the development process, our team decided to applied scrum methodology to planning and developing the product. Firstly, our teams develop user stories based on the document. Then we decided that each sprint length is a week, after each sprint, a meeting is conducted to review the work and move to next sprint.
